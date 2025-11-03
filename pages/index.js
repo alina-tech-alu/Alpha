@@ -1,11 +1,5 @@
-import { createClient } from '@supabase/supabase-js'
 import { useState, useEffect } from 'react'
-import { Ship, Package, Wrench, Building, TrendingUp, AlertCircle, CheckCircle, MapPin } from 'lucide-react'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-)
+import { Ship, Wrench, Building, TrendingUp, AlertCircle, CheckCircle, MapPin } from 'lucide-react'
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('overview')
@@ -20,13 +14,32 @@ export default function Dashboard() {
   }, [])
 
   async function fetchData() {
-    const { data: shipsData } = await supabase.from('ships').select('*')
-    const { data: containersData } = await supabase.from('containers').select('*')
-    const { data: unitsData } = await supabase.from('units').select('*')
-    
-    setShips(shipsData || [])
-    setContainers(containersData || [])
-    setUnits(unitsData || [])
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      
+      const headers = {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Content-Type': 'application/json'
+      }
+
+      const [shipsRes, containersRes, unitsRes] = await Promise.all([
+        fetch(`${supabaseUrl}/rest/v1/ships?select=*`, { headers }),
+        fetch(`${supabaseUrl}/rest/v1/containers?select=*`, { headers }),
+        fetch(`${supabaseUrl}/rest/v1/units?select=*`, { headers })
+      ])
+
+      const shipsData = await shipsRes.json()
+      const containersData = await containersRes.json()
+      const unitsData = await unitsRes.json()
+      
+      setShips(shipsData || [])
+      setContainers(containersData || [])
+      setUnits(unitsData || [])
+    } catch (error) {
+      console.error('Error:', error)
+    }
     setLoading(false)
   }
 
@@ -39,7 +52,9 @@ export default function Dashboard() {
       'complete': 'bg-green-100 text-green-800',
       'בדרך': 'bg-blue-100 text-blue-800',
       'במכס': 'bg-yellow-100 text-yellow-800',
-      'במחסן': 'bg-green-100 text-green-800'
+      'במחסן': 'bg-green-100 text-green-800',
+      'In Transit': 'bg-blue-100 text-blue-800',
+      'Customs': 'bg-yellow-100 text-yellow-800'
     }
     return colors[status] || 'bg-gray-100 text-gray-800'
   }
@@ -48,7 +63,7 @@ export default function Dashboard() {
   const completedUnits = units.filter(u => u.status === 'complete').reduce((sum, u) => sum + (u.qty || 0), 0)
   const overallProgress = totalUnits > 0 ? Math.round((completedUnits / totalUnits) * 100) : 0
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center">טוען...</div>
+  if (loading) return <div className="min-h-screen flex items-center justify-center text-2xl">טוען...</div>
 
   return (
     <div className="min-h-screen bg-gray-50 p-6" dir="rtl">
@@ -145,53 +160,73 @@ export default function Dashboard() {
                 ))}
               </div>
             </div>
+            {ships.length === 0 && <p className="text-center text-gray-500">אין אוניות בדרך</p>}
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg font-semibold mb-4">רשימת אוניות</h3>
+              {ships.map((ship, idx) => (
+                <div key={idx} className="p-3 mb-2 bg-gray-50 rounded">
+                  <p className="font-medium">{ship.id}</p>
+                  <p className="text-sm text-gray-600">{ship.route}</p>
+                  <p className="text-sm">ETA: {ship.eta}</p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
         {activeTab === 'logistics' && (
           <div className="space-y-4">
             <h2 className="text-2xl font-bold mb-4">מכולות ומשלוחים</h2>
-            {containers.map(container => (
-              <div key={container.id} className="bg-white p-6 rounded-lg shadow">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-xl font-semibold">{container.id}</h3>
-                    <p className="text-gray-600">אונייה: {container.ship}</p>
+            {containers.length === 0 ? (
+              <p className="text-center text-gray-500">אין מכולות</p>
+            ) : (
+              containers.map(container => (
+                <div key={container.id} className="bg-white p-6 rounded-lg shadow">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h3 className="text-xl font-semibold">{container.id}</h3>
+                      <p className="text-gray-600">אונייה: {container.ship}</p>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(container.status)}`}>
+                      {container.status}
+                    </span>
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(container.status)}`}>
-                    {container.status}
-                  </span>
+                  <p className="text-sm">ETA: {container.eta}</p>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         )}
 
         {activeTab === 'production' && (
           <div className="space-y-4">
             <h2 className="text-2xl font-bold mb-4">סוגי עבודות ומוכנות</h2>
-            {units.map(unit => (
-              <div key={unit.id} className="bg-white p-6 rounded-lg shadow">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-xl font-semibold">{unit.id}</h3>
-                    <p className="text-gray-600">קומה {unit.floor}, חזית {unit.facade} • {unit.qty} יח׳</p>
+            {units.length === 0 ? (
+              <p className="text-center text-gray-500">אין יחידות</p>
+            ) : (
+              units.map(unit => (
+                <div key={unit.id} className="bg-white p-6 rounded-lg shadow">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h3 className="text-xl font-semibold">{unit.id}</h3>
+                      <p className="text-gray-600">קומה {unit.floor}, חזית {unit.facade} • {unit.qty} יח׳</p>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(unit.status)}`}>
+                      {unit.status}
+                    </span>
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(unit.status)}`}>
-                    {unit.status}
-                  </span>
+                  <div className="mb-4">
+                    <div className="flex justify-between mb-1">
+                      <span className="text-sm font-medium">התקדמות</span>
+                      <span className="text-sm text-gray-600">{unit.progress}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="bg-blue-600 h-2 rounded-full" style={{width: `${unit.progress}%`}}></div>
+                    </div>
+                  </div>
                 </div>
-                <div className="mb-4">
-                  <div className="flex justify-between mb-1">
-                    <span className="text-sm font-medium">התקדמות</span>
-                    <span className="text-sm text-gray-600">{unit.progress}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div className="bg-blue-600 h-2 rounded-full" style={{width: `${unit.progress}%`}}></div>
-                  </div>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         )}
 
